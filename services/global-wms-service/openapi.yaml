@@ -1,0 +1,284 @@
+openapi: 3.0.3
+info:
+  title: Global WMS Service API
+  version: "1.0.0"
+  description: >
+    View into the warehouse's physical inventory. Numbers here come from
+    periodic cycle counts, not a live feed — always check /movements/{sku}
+    for anything that happened since the last count before treating
+    quantityOnHand as final. The write endpoints (POST/PUT/DELETE) are for
+    developers building their own test scenarios, not for automated callers —
+    resolver-agent, for example, only ever calls the GET endpoints below.
+servers:
+  - url: http://localhost:4001
+paths:
+  /inventory:
+    get:
+      summary: List the current physical inventory record for every known SKU.
+      responses:
+        "200":
+          description: One record per known SKU.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/InventoryRecord"
+    post:
+      summary: >
+        Create a new inventory record. For developers building test
+        scenarios — resolver-agent never calls this.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/InventoryRecord"
+      responses:
+        "201":
+          description: The record was created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InventoryRecord"
+        "400":
+          description: The request body was missing a required field or had the wrong type.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: An inventory record with this SKU already exists.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /inventory/{sku}:
+    get:
+      summary: Get the current physical inventory record for one SKU.
+      parameters:
+        - name: sku
+          in: path
+          required: true
+          schema:
+            type: string
+          description: The SKU to look up, e.g. SKU-001. Case-sensitive.
+      responses:
+        "200":
+          description: The inventory record for the requested SKU.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InventoryRecord"
+        "404":
+          description: No inventory record exists for this SKU.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    put:
+      summary: >
+        Update the quantityOnHand, lastCountedAt, and location of an existing
+        inventory record. For developers building test scenarios —
+        resolver-agent never calls this.
+      parameters:
+        - name: sku
+          in: path
+          required: true
+          schema:
+            type: string
+          description: The SKU to update, e.g. SKU-001. Case-sensitive.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [quantityOnHand, lastCountedAt, location]
+              additionalProperties: false
+              properties:
+                quantityOnHand:
+                  type: integer
+                  description: See InventoryRecord.quantityOnHand.
+                lastCountedAt:
+                  type: string
+                  format: date-time
+                  description: See InventoryRecord.lastCountedAt.
+                location:
+                  type: string
+                  description: See InventoryRecord.location.
+      responses:
+        "200":
+          description: The updated record.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InventoryRecord"
+        "400":
+          description: The request body was missing a required field or had the wrong type.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: No inventory record exists for this SKU.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    delete:
+      summary: >
+        Delete an inventory record. For developers building test scenarios —
+        resolver-agent never calls this. Does not delete this SKU's
+        movements — see /movements/{sku}.
+      parameters:
+        - name: sku
+          in: path
+          required: true
+          schema:
+            type: string
+          description: The SKU to delete, e.g. SKU-001. Case-sensitive.
+      responses:
+        "204":
+          description: The record was deleted.
+        "404":
+          description: No inventory record exists for this SKU.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /movements/{sku}:
+    get:
+      summary: Get the movement history for one SKU, most recent first.
+      parameters:
+        - name: sku
+          in: path
+          required: true
+          schema:
+            type: string
+          description: The SKU to look up, e.g. SKU-001. Case-sensitive.
+      responses:
+        "200":
+          description: >
+            Movements for this SKU, most recent first. Can be an empty array
+            if the SKU exists but has no recorded movements yet.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/StockMovement"
+        "404":
+          description: No inventory record exists for this SKU.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /movements:
+    post:
+      summary: >
+        Record a new movement for an existing SKU. For developers building
+        test scenarios — resolver-agent never calls this.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StockMovement"
+      responses:
+        "201":
+          description: The movement was recorded.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StockMovement"
+        "400":
+          description: The request body was missing a required field or had the wrong type.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: No inventory record exists for the sku named in the request body.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+components:
+  schemas:
+    InventoryRecord:
+      type: object
+      required: [sku, quantityOnHand, lastCountedAt, location]
+      additionalProperties: false
+      properties:
+        sku:
+          type: string
+          description: >
+            Unique product identifier, e.g. SKU-001. Matches the SKU used by
+            the storefront service — the two systems share the same identifiers.
+        quantityOnHand:
+          type: integer
+          description: >
+            Raw physical count from the last cycle count. This has NOT been
+            adjusted for anything recorded in /movements since that count —
+            a quarantine or adjustment movement can mean the real sellable
+            quantity is different from this field. Always check
+            /movements/{sku} before treating this number as final.
+        lastCountedAt:
+          type: string
+          format: date-time
+          description: >
+            When the cycle count behind quantityOnHand happened. Cycle counts
+            run periodically (hours to a day apart), not continuously, so
+            this is the single most important field for judging how fresh
+            quantityOnHand actually is.
+        location:
+          type: string
+          description: >
+            Warehouse bin/shelf location, for internal reference only. Does
+            not affect quantityOnHand.
+    StockMovement:
+      type: object
+      required: [sku, occurredAt, type, quantityDelta, note]
+      additionalProperties: false
+      properties:
+        sku:
+          type: string
+          description: The SKU this movement affected.
+        occurredAt:
+          type: string
+          format: date-time
+          description: >
+            When this movement was recorded. Movements are recorded the
+            moment they happen, so a movement here can be more current than
+            quantityOnHand on the matching /inventory/{sku} record.
+        type:
+          type: string
+          enum: [cycle_count, adjustment, quarantine, release]
+          description: >
+            cycle_count: a fresh physical count that replaced the previous
+            quantityOnHand. adjustment: a manual correction, e.g. fixing a
+            data-entry mistake. quarantine: units pulled aside as damaged or
+            otherwise unsellable — this reduces real sellable stock
+            immediately, even before the next cycle_count applies it to
+            quantityOnHand. release: previously quarantined units returned
+            to sellable stock.
+        quantityDelta:
+          type: integer
+          description: >
+            Signed change caused by this movement. Negative for quarantine
+            events, positive for releases or a cycle count that found more
+            stock than the previous count expected.
+        note:
+          type: string
+          description: Free-text explanation from whoever recorded the movement.
+    Error:
+      type: object
+      required: [error]
+      additionalProperties: false
+      properties:
+        error:
+          type: string
+          description: >
+            Human-readable reason the request failed, e.g.
+            "Unknown SKU: SKU-999".

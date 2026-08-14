@@ -1,0 +1,16 @@
+{
+    "name": "stock-ledger",
+    "private": true,
+    "engines": {
+        "node": ">=20"
+    },
+    "workspaces": [
+        "services/*"
+    ],
+    "scripts": {
+        "dev:wms": "npm run dev --workspace=global-wms-service",
+        "dev:storefront": "npm run dev --workspace=retail-storefront-service",
+        "dev:agent": "npm run dev --workspace=resolver-agent",
+        "test": "npm run test --workspaces --if-present"
+    }
+}

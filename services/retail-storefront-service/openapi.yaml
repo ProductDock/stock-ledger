@@ -1,0 +1,409 @@
+openapi: 3.0.3
+info:
+  title: Retail Storefront Service API
+  version: "1.0.0"
+  description: >
+    View into the e-commerce storefront's inventory feed. quantityAvailable
+    is a derived number, not a physical count — it already has pending-order
+    reservations subtracted and in-transit return credits added. Use
+    /orders/pending and /returns/in-transit to see what went into it. The
+    write endpoints (POST/PUT/DELETE) are for developers building their own
+    test scenarios, not for automated callers — resolver-agent, for example,
+    only ever calls the GET endpoints below.
+servers:
+  - url: http://localhost:4002
+paths:
+  /stock:
+    get:
+      summary: List the current available-to-sell quantity for every known SKU.
+      responses:
+        "200":
+          description: One record per known SKU.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/StockRecord"
+    post:
+      summary: >
+        Create a new stock record. For developers building test scenarios —
+        resolver-agent never calls this.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StockRecord"
+      responses:
+        "201":
+          description: The record was created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StockRecord"
+        "400":
+          description: The request body was missing a required field or had the wrong type.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: A stock record with this SKU already exists.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /stock/{sku}:
+    get:
+      summary: Get the current available-to-sell quantity for one SKU.
+      parameters:
+        - name: sku
+          in: path
+          required: true
+          schema:
+            type: string
+          description: The SKU to look up, e.g. SKU-001. Case-sensitive.
+      responses:
+        "200":
+          description: The stock record for the requested SKU.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StockRecord"
+        "404":
+          description: No stock record exists for this SKU.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    put:
+      summary: >
+        Update the quantityAvailable and lastSyncedAt of an existing stock
+        record. For developers building test scenarios — resolver-agent
+        never calls this.
+      parameters:
+        - name: sku
+          in: path
+          required: true
+          schema:
+            type: string
+          description: The SKU to update, e.g. SKU-001. Case-sensitive.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [quantityAvailable, lastSyncedAt]
+              additionalProperties: false
+              properties:
+                quantityAvailable:
+                  type: integer
+                  description: See StockRecord.quantityAvailable.
+                lastSyncedAt:
+                  type: string
+                  format: date-time
+                  description: See StockRecord.lastSyncedAt.
+      responses:
+        "200":
+          description: The updated record.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StockRecord"
+        "400":
+          description: The request body was missing a required field or had the wrong type.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: No stock record exists for this SKU.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    delete:
+      summary: >
+        Delete a stock record. For developers building test scenarios —
+        resolver-agent never calls this.
+      parameters:
+        - name: sku
+          in: path
+          required: true
+          schema:
+            type: string
+          description: The SKU to delete, e.g. SKU-001. Case-sensitive.
+      responses:
+        "204":
+          description: The record was deleted.
+        "404":
+          description: No stock record exists for this SKU.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /orders/pending:
+    get:
+      summary: List orders for one SKU that have reserved stock but not shipped yet.
+      parameters:
+        - name: sku
+          in: query
+          required: true
+          schema:
+            type: string
+          description: >
+            The SKU to look up, e.g. SKU-001. Required — there is no
+            "list every pending order" mode.
+      responses:
+        "200":
+          description: >
+            Pending orders for this SKU. An empty array means no stock is
+            currently reserved by unshipped orders for this SKU.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PendingOrder"
+        "400":
+          description: The sku query parameter was missing.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    post:
+      summary: >
+        Create a new pending order. For developers building test scenarios —
+        resolver-agent never calls this.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PendingOrder"
+      responses:
+        "201":
+          description: The order was created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PendingOrder"
+        "400":
+          description: The request body was missing a required field or had the wrong type.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: An order with this orderId already exists.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /orders/pending/{orderId}:
+    delete:
+      summary: >
+        Delete a pending order. For developers building test scenarios —
+        resolver-agent never calls this. This does not change
+        quantityAvailable on the matching /stock/{sku} record — update that
+        separately if the scenario calls for it.
+      parameters:
+        - name: orderId
+          in: path
+          required: true
+          schema:
+            type: string
+          description: The order to delete, e.g. ORD-2201. Case-sensitive.
+      responses:
+        "204":
+          description: The order was deleted.
+        "404":
+          description: No pending order exists with this orderId.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /returns/in-transit:
+    get:
+      summary: >
+        List returns for one SKU that have already been credited back to
+        quantityAvailable but have not physically arrived at the warehouse
+        yet.
+      parameters:
+        - name: sku
+          in: query
+          required: true
+          schema:
+            type: string
+          description: >
+            The SKU to look up, e.g. SKU-001. Required — there is no
+            "list every in-transit return" mode.
+      responses:
+        "200":
+          description: >
+            In-transit returns for this SKU. An empty array means every
+            credited return for this SKU has already physically arrived.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ReturnInTransit"
+        "400":
+          description: The sku query parameter was missing.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    post:
+      summary: >
+        Create a new in-transit return. For developers building test
+        scenarios — resolver-agent never calls this.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReturnInTransit"
+      responses:
+        "201":
+          description: The return was created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReturnInTransit"
+        "400":
+          description: The request body was missing a required field or had the wrong type.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: A return with this returnId already exists.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /returns/in-transit/{returnId}:
+    delete:
+      summary: >
+        Delete an in-transit return. For developers building test scenarios —
+        resolver-agent never calls this. This does not change
+        quantityAvailable on the matching /stock/{sku} record — update that
+        separately if the scenario calls for it.
+      parameters:
+        - name: returnId
+          in: path
+          required: true
+          schema:
+            type: string
+          description: The return to delete, e.g. RET-3110. Case-sensitive.
+      responses:
+        "204":
+          description: The return was deleted.
+        "404":
+          description: No in-transit return exists with this returnId.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+components:
+  schemas:
+    StockRecord:
+      type: object
+      required: [sku, quantityAvailable, lastSyncedAt]
+      additionalProperties: false
+      properties:
+        sku:
+          type: string
+          description: >
+            Unique product identifier, e.g. SKU-001. Matches the SKU used by
+            the WMS service — the two systems share the same
+            identifiers.
+        quantityAvailable:
+          type: integer
+          description: >
+            Units currently available to sell on the storefront. This is a
+            derived number: the warehouse's sellable count, minus units
+            already reserved by pending orders (see /orders/pending), plus
+            units already credited back from in-transit returns (see
+            /returns/in-transit). It is NOT a live physical count — check
+            lastSyncedAt for freshness.
+        lastSyncedAt:
+          type: string
+          format: date-time
+          description: >
+            The last time this number was refreshed from the warehouse feed.
+            Between syncs, quantityAvailable can lag behind whatever
+            physically happened at the warehouse since.
+    PendingOrder:
+      type: object
+      required: [sku, orderId, quantity, status, placedAt]
+      additionalProperties: false
+      properties:
+        sku:
+          type: string
+          description: The SKU this order reserved stock for.
+        orderId:
+          type: string
+          description: Unique order identifier, e.g. ORD-2201.
+        quantity:
+          type: integer
+          description: >
+            Units reserved by this order. Already subtracted from
+            quantityAvailable, even though these units may still be
+            physically sitting at the warehouse until they're picked
+            and shipped.
+        status:
+          type: string
+          enum: [placed, picking, shipped]
+          description: >
+            placed: order accepted, stock reserved, not yet touched
+            physically. picking: warehouse staff are pulling the item.
+            shipped: item has left the warehouse — at this point it should
+            no longer appear in the warehouse's physical count either.
+        placedAt:
+          type: string
+          format: date-time
+          description: When the order was placed.
+    ReturnInTransit:
+      type: object
+      required: [sku, returnId, quantity, initiatedAt, expectedArrivalAt]
+      additionalProperties: false
+      properties:
+        sku:
+          type: string
+          description: The SKU being returned.
+        returnId:
+          type: string
+          description: Unique return identifier, e.g. RET-3110.
+        quantity:
+          type: integer
+          description: >
+            Units already credited back to quantityAvailable even though
+            they have not physically arrived back at the warehouse yet.
+            Until they do, expect the warehouse and webshop numbers to
+            disagree by exactly this amount.
+        initiatedAt:
+          type: string
+          format: date-time
+          description: When the customer started this return.
+        expectedArrivalAt:
+          type: string
+          format: date-time
+          description: >
+            Estimated date the physical item should reach the warehouse.
+            Before this date, the gap between the warehouse's physical
+            count and this return's quantity is expected, not a problem.
+    Error:
+      type: object
+      required: [error]
+      additionalProperties: false
+      properties:
+        error:
+          type: string
+          description: >
+            Human-readable reason the request failed, e.g.
+            "Query parameter 'sku' is required.".
