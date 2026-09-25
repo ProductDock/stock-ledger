@@ -20,7 +20,7 @@ function hoursFromNow(hours: number): string {
 export const stock: StockRecord[] = [
     // SKU-001 — stale: last synced before the warehouse's most recent
     // recount, so this number hasn't caught up to the extra stock yet.
-    { sku: "SKU-001", quantityAvailable: 38, lastSyncedAt: hoursAgo(18) },
+    { sku: "SKU-001", quantityAvailable: 38, lastSyncedAt: hoursAgo(4) },
 
     // SKU-002 — fresh, but derived: 40 on the shelf minus 12 reserved by
     // pending orders below.
